@@ -104,13 +104,24 @@ function defaultdistroparams()
 end
 
 """
-    defineddistribution(type; mean=0.0,sd=1.0)
+    definedistribution()
 
-    This is function that returns a Distro value defined by calling parameters.
+    This is function returns a Distro value defined by calling parameters.
         type=> 'normal' or 'binary' ; see docstring for Distro.
         mean::Float64 - mean value of simulated target distribution
-        sd::Float64 - any value greater than 0. standard deviation of
+        sd::Float64 - any value greater than 0.0; directs standard deviation of
                         simulated target distribution
+    Default values for type 'normal' are mean =0.0 and sd=1.0
+    Default values for type 'binary' do not exist. Must specify a mean proportion
+        in range [0.05,0.95]
+
+    Examples
+    ```
+    mydistro= definedistribution("normal")
+    mydistro2= definedistribution("normal", mean=15, sd=3.5)
+    mydistro3= definedistribution("binary", mean=.25)
+    ```
+    
 """
 function definedistribution(type::String ; mean::Union{Int64,Float64}=0.0, sd::Union{Int64,Float64}=1.0)
     distrosupported=["normal","binary","null"]
@@ -163,6 +174,7 @@ end
     '''
     myscm=SimpleScm()
     '''
+
 """
 function SimpleScm()
     return Vector{SimpleScmEvent}(undef,0)
@@ -175,8 +187,7 @@ end
 # labels=[scm[i].label for i in eachindex(scm)]
 
 """
-    add_scmevent!(scm::Vector{SimpleScmEvent}, label::String; 
-    distribution::Distro=definedistribution("normal"),r_squared::Float64=1.0)
+    add_scmevent!()
 
     This function adds an event node to a causal model i.e. Vector{SimpleScmEvent}
         and returns the assigned event ID.
@@ -198,7 +209,8 @@ end
     add_scmevent!(myscm,"Event A",r_squared=.9)
     add_scmevent!(mysc,"Event B",r_squared=.9,distribution=definedistribution("normal", mean=4,sd=2))
     add_scmevent!(myscm4,"Event C",r_squared=.9,distribution=definedistribution("binary", mean=.25))
-    ````
+    ```
+
 """
 function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String; 
                     distribution::Distro=definedistribution("normal"),r_squared::Float64=1.0)
@@ -216,7 +228,7 @@ function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String;
 end
 
 """
-    delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 or dlabel::String)
+    delete_scmevent!()
 
     This function removes the specified event node from specified causal model (scm).
     The node can be specified by either it's event ID or label.
@@ -224,6 +236,7 @@ end
     Example
     ```
     delete_scmevent!(myscm,"Event A")
+
     ```
 
 """
@@ -254,18 +267,6 @@ function delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64)
     return idx
 end
 
-"""
-    delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 or dlabel::String)
-
-    This function removes the specified event node from specified causal model (scm).
-    The node can be specified by either it's event ID or label.
-
-    Example
-    ```
-    delete_scmevent!(myscm,"Event A")
-    ```
-
-"""
 function delete_scmevent!(scm::Vector{SimpleScmEvent},  dlabel::String)
     labels=[scm[i].label for i in eachindex(scm)]
     didx=findfirst(isequal.(dlabel,labels))
@@ -277,10 +278,18 @@ function delete_scmevent!(scm::Vector{SimpleScmEvent},  dlabel::String)
 end
 
 """
-    modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel::String="xzkg513",
-                                                    r_squared::Float64=-666.0)
-
     This function modifies parameters to an existing event node.
+    Modifiable parameters include label, distribution, and r_squared.
+    The event can be indicated by event ID or label.
+
+    Example
+    ```
+    modify_scmevent!(myscm,"X", newlabel="newX")
+    modify_scmevent!(myscm,"newX", distribution=definedistribution("binary",mean=.6))
+    modify_scmevent!(myscm,"newX", r_squared=.5)
+    modify_scmevent!(myscm,"newX",newlabel="oldX",distribution=definedistribution("normal"),r_squared=0.9))
+    ```
+    
 """
 function modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel::String="xzkg513", 
     distribution::Distro=definedistribution("null"),r_squared::Float64=-666.0)
@@ -317,6 +326,23 @@ function modify_scmevent!(scm::Vector{SimpleScmEvent},  mlabel::String ; newlabe
     modify_scmevent!(scm,scm[midx].event,newlabel=newlabel, distribution=distribution, r_squared=r_squared)
 end
 
+"""
+    add_scmedge!()
+
+    This function adds a new edge between existing event nodes.  Events can be
+        specified by event ID or label. The direction of the edge is from the cause event 
+        to effect event.  The weight (i.e. wt) parameter is used when simulating data. 
+        When multiple nodes combine, weights are used to proportion variance contributions
+        to the receiving node (based on the standard/normalized causative distributions).
+        The default is wt=1.0
+
+    Example
+    ```
+    add_scmedge!(myscm, "X1","X2",wt=1.5)
+    add_scmedge!(myscm,"X2","X3")
+    ```
+    
+"""
 function add_scmedge!(scm::Vector{SimpleScmEvent}, cause::Int64, effect::Int64; wt::Vector{}=[1.0])
                # wts::Vector{Union{Int64,Float64}}=[1.0])
     #check if at least two events exist
@@ -378,6 +404,18 @@ function add_scmedge!(scm::Vector{SimpleScmEvent}, clabel::String, elabel::Strin
     add_scmedge!(scm,scm[cidx].event,scm[eidx].event,wt=wt)
 end
 
+"""
+    delete_scmedge!()
+
+    This function will remove an existing edge between a 'cause' event and 'effect' event.
+    Event nodes can be referenced by event ID or label.
+
+    Example
+    ```
+    delete_scmedge!(myscm,"X2","X3")
+    ```
+    `
+"""
 function delete_scmedge!(scm::Vector{SimpleScmEvent}, cause::Int64, effect::Int64)
     # not yet written to handle errors
     events=[scm[i].event for i in eachindex(scm)]
@@ -414,6 +452,18 @@ function delete_scmedge!(scm::Vector{SimpleScmEvent}, clabel::String, elabel::St
     delete_scmedge!(scm,scm[cidx].event,scm[eidx].event)
 end
 
+"""
+    modify_wts_scmedge!()
+
+    This function modifies the 'wt' parameter of an existing edge.
+    'cause' and 'event' nodes can be specified by event ID or label.
+
+    Example
+    ```
+    modify_wts_scmedge!(myscm,"X1","X2", wt=.75)
+    ```
+
+"""
 function modify_wts_scmedge!(scm::Vector{SimpleScmEvent}, cause::Int64, effect::Int64; wt::Vector{}=[1.0])
     #error handling not yet written
     events=[scm[i].event for i in eachindex(scm)]
@@ -465,19 +515,41 @@ function causerankscm(scm::Vector{SimpleScmEvent})
             deleteat!(pidx,rc)
         end
         # loop through eventrank and remove these elements from pcs elements
-        for i in eachindex(eventrank)
-            for j in eachindex(pcs)
-                tc=findfirst(isequal(eventrank[i]),pcs[j])
-                if !isnothing(tc)
-                    deleteat!(pcs[j],tc)
-                end
+        lc=Vector{Int64}(undef,0)
+        for i in eachindex(pcs)
+            if allainb(pcs[i],eventrank)
+                push!(lc,i)
             end
         end
+        for i in eachindex(lc)
+            push!(eventrank,scm[pidx[lc[i]]].event)
+            push!(scmrank,pidx[lc[i]])
+        end
+        deleteat!(pcs,lc)
+        deleteat!(pidx,lc)
     end
 
     return scmrank,eventrank
 end
 
+function allainb(a::Vector{Int64},b::Vector{Int64})
+    return (prod(in.(a,Ref(b))))
+end
+
+"""
+    simulationdata()
+
+    This function creates a DataFrame with simulated data based on parameters of the
+        designated structural causal model.  Parameter 'nsims' is the number of rows 
+        simulated; default rows=1000 . 
+        There is a default 'randomseed' that can be changed.
+
+    Example
+    ```
+    df= simulationdata(myscm, nsims=5000, randomseed=5551212
+    ```
+
+"""
 function simulationdata(scm::Vector{SimpleScmEvent}, nsims::Int64=1000; randomseed::Int64=1234)
     Random.seed!(randomseed)
     # function to create simulation data
@@ -601,8 +673,17 @@ function modelsimdf(simdf::DataFrame, clabel::String,elabel::String;
         cformula = term(elabel)~term(1)+term(clabel)
     end
     println(cformula)
-    simmodel = lm(cformula,simdf)
-    return(simmodel)
+    # check if linear or logistic
+    tset=unique(sort(simdf[!,elabel]))
+    if tset==[0,1]
+        #logistic model
+        simmodel = glm(cformula,simdf,Bernoulli(),LogitLink())
+        return(simmodel)
+    else
+        #linear model
+        simmodel = lm(cformula,simdf)
+        return(simmodel)
+    end
 end
 
 function modelsimdf(simdf::DataFrame, scm::Vector{SimpleScmEvent},event1::Int64, event2::Int64; 
