@@ -47,16 +47,44 @@ export simulationdata, modelsimdf
 # end export
 
 # the bobdagnode structure is the basis of diagram
+"""
+    Distroparams is an internal structure to store distribution parameters.
+"""
 mutable struct DistroParams
     mean::Float64
     sd::Float64
 end
 
+"""
+    Distro is structure to hold distribution type and parameters.
+    Current distributions include 'normal' and 'binary'.
+    These are used to generate simulation data.
+    normal=> gaussian
+    binary=> logit-normal converted to 1/0 with random bernoulli sample
+"""
 mutable struct Distro
     type::String
     params::DistroParams
 end
 
+"""
+    SimpleScmEvent is the main structure for an event node.  A complete structural 
+    model is defined by Vector{SimpleScmEvent}.
+    Fields:
+        event::Int64 - internal event node ID
+        label::String - label for the event node. These are used for DAG and as
+                        variable names for simulation data.  If first character is 
+                        u or U then model assumes event is not measured.
+        distribution::Distro - designation of target distribution for simulated data
+        r_squared::Float64 - a number (0,1]; default is 1. Factors in unmeasured randomness in 
+                            simulated data. r_squared is correlation between target distribution and
+                            actual simulated data.
+        causes::Vector{Int64} - a vector of event node ID with an edge that points into this event node.
+        effects::Vecotr{Int64} - a vector of target event node ID with edge emminating from this event node.
+        effectwts::Vector{Vector{Float64}} - each edge is assigned a weight (default is 1.0). These are used
+                                            to generate simulation data when multiple edges enter a single
+                                            event node.  They define the relative value of variance contribution.
+"""
 mutable struct SimpleScmEvent
     event::Int64
     label::String 
@@ -75,8 +103,17 @@ function defaultdistroparams()
     return ddp
 end
 
+"""
+    defineddistribution(type; mean=0.0,sd=1.0)
+
+    This is function that returns a Distro value defined by calling parameters.
+        type=> 'normal' or 'binary' ; see docstring for Distro.
+        mean::Float64 - mean value of simulated target distribution
+        sd::Float64 - any value greater than 0. standard deviation of
+                        simulated target distribution
+"""
 function definedistribution(type::String ; mean::Union{Int64,Float64}=0.0, sd::Union{Int64,Float64}=1.0)
-    distrosupported=["normal","binary"]
+    distrosupported=["normal","binary","null"]
     # binary is supported as logit-normal converted via bernouolli to {0,1}.
     type=lowercase(type)
     if issubset([type],distrosupported)      
@@ -105,6 +142,11 @@ function definedistribution(type::String ; mean::Union{Int64,Float64}=0.0, sd::U
                 error(msg)
             end
         end
+        if type=="null"
+            params=defaultdistroparams()
+            dd=Distro(type,params)
+            return dd
+        end
     else
         msg="Requested distribution: '"*type*"' is not supported."
         error(msg)
@@ -112,6 +154,16 @@ function definedistribution(type::String ; mean::Union{Int64,Float64}=0.0, sd::U
     return nothing
 end
 
+"""
+    SimpleScm()
+
+    This is a constructor for a structural causal model.
+
+    Example:
+    '''
+    myscm=SimpleScm()
+    '''
+"""
 function SimpleScm()
     return Vector{SimpleScmEvent}(undef,0)
 end
@@ -122,6 +174,32 @@ end
 # effects=[scm[i].effects for i in eachindex(scm)]
 # labels=[scm[i].label for i in eachindex(scm)]
 
+"""
+    add_scmevent!(scm::Vector{SimpleScmEvent}, label::String; 
+    distribution::Distro=definedistribution("normal"),r_squared::Float64=1.0)
+
+    This function adds an event node to a causal model i.e. Vector{SimpleScmEvent}
+        and returns the assigned event ID.
+
+    Parameters:
+        scm::Vector{SimpleScmEvent} - a previously instantiated causal model.
+        label::String - label for event node. This label is used in graphs and
+                        to name variables in simulation data. If first character is 
+                        (either) u or U the event is taken to mean 'unmeasured'.
+        distribution::Distro (named and optional, default 'normal') - simulation is monotonically 
+                        transformed into distribution specified.
+        r_squared::Float64 (named and optional) -  a number (0,1]; default is 1. 
+                        Factors in unmeasured randomness in simulated data. 
+                        r_squared is correlation between target distribution and
+                        actual simulated data.
+
+    Example:
+    ```
+    add_scmevent!(myscm,"Event A",r_squared=.9)
+    add_scmevent!(mysc,"Event B",r_squared=.9,distribution=definedistribution("normal", mean=4,sd=2))
+    add_scmevent!(myscm4,"Event C",r_squared=.9,distribution=definedistribution("binary", mean=.25))
+    ````
+"""
 function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String; 
                     distribution::Distro=definedistribution("normal"),r_squared::Float64=1.0)
     maxevent=0
@@ -137,6 +215,18 @@ function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String;
     return nextevent
 end
 
+"""
+    delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 or dlabel::String)
+
+    This function removes the specified event node from specified causal model (scm).
+    The node can be specified by either it's event ID or label.
+
+    Example
+    ```
+    delete_scmevent!(myscm,"Event A")
+    ```
+
+"""
 function delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64)
     events=[scm[i].event for i in eachindex(scm)]
     idx=findfirst(isequal.(events,event))
@@ -164,6 +254,18 @@ function delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64)
     return idx
 end
 
+"""
+    delete_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 or dlabel::String)
+
+    This function removes the specified event node from specified causal model (scm).
+    The node can be specified by either it's event ID or label.
+
+    Example
+    ```
+    delete_scmevent!(myscm,"Event A")
+    ```
+
+"""
 function delete_scmevent!(scm::Vector{SimpleScmEvent},  dlabel::String)
     labels=[scm[i].label for i in eachindex(scm)]
     didx=findfirst(isequal.(dlabel,labels))
@@ -174,8 +276,16 @@ function delete_scmevent!(scm::Vector{SimpleScmEvent},  dlabel::String)
     delete_scmevent!(scm,scm[didx].event)
 end
 
-function modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel::String="xzkg513",r_squared::Float64=-666.0)
-    #does not yet include wqy to change distribution
+"""
+    modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel::String="xzkg513",
+                                                    r_squared::Float64=-666.0)
+
+    This function modifies parameters to an existing event node.
+"""
+function modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel::String="xzkg513", 
+    distribution::Distro=definedistribution("null"),r_squared::Float64=-666.0)
+
+    
     events=[scm[i].event for i in eachindex(scm)]
     idx=findfirst(isequal.(events,event))
     if isnothing(idx)
@@ -188,18 +298,23 @@ function modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel:
         if r_squared>0.0 && r_squared<=1.0
             scm[idx].r_squared=r_squared
         end
+        if distribution.type != "null"
+            scm[idx].distribution=distribution
+        end
     end   
     return idx
 end
 
-function modify_scmevent!(scm::Vector{SimpleScmEvent},  mlabel::String ; newlabel::String="xzkg513",r_squared::Float64=-666.0)
+function modify_scmevent!(scm::Vector{SimpleScmEvent},  mlabel::String ; newlabel::String="xzkg513",
+    distribution::Distro=definedistribution("null"),r_squared::Float64=-666.0)
+
     labels=[scm[i].label for i in eachindex(scm)]
     midx=findfirst(isequal.(mlabel,labels))
     if isnothing(midx)
         msg="Specified label not found: modify_scmedge."
         error(msg)
     end
-    modify_scmevent!(scm,scm[midx].event,newlabel=newlabel, r_squared=r_squared)
+    modify_scmevent!(scm,scm[midx].event,newlabel=newlabel, distribution=distribution, r_squared=r_squared)
 end
 
 function add_scmedge!(scm::Vector{SimpleScmEvent}, cause::Int64, effect::Int64; wt::Vector{}=[1.0])
