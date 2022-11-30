@@ -60,7 +60,7 @@ end
     Current distributions include 'normal' and 'binary'.
     These are used to generate simulation data.
     normal=> gaussian
-    binary=> logit-normal converted to 1/0 with random bernoulli sample
+    binary=> normal converted to 1/0 by percentile
 """
 mutable struct Distro
     type::String
@@ -76,7 +76,7 @@ end
                         variable names for simulation data.  If first character is 
                         u or U then model assumes event is not measured.
         distribution::Distro - designation of target distribution for simulated data
-        r_squared::Float64 - a number (0,1]; default is 1. Factors in unmeasured randomness in 
+        r_squared::Float64 - a number [0.5,0.9]; default is 0.9. Factors in unmeasured randomness in 
                             simulated data. r_squared is correlation between target distribution and
                             actual simulated data.
         causes::Vector{Int64} - a vector of event node ID with an edge that points into this event node.
@@ -125,7 +125,7 @@ end
 """
 function definedistribution(type::String ; mean::Union{Int64,Float64}=0.0, sd::Union{Int64,Float64}=1.0)
     distrosupported=["normal","binary","null"]
-    # binary is supported as logit-normal converted via bernouolli to {0,1}.
+    # binary is supported as normal converted to {0,1} via percentile.
     type=lowercase(type)
     if issubset([type],distrosupported)      
         # process and create Distro
@@ -199,7 +199,7 @@ end
                         (either) u or U the event is taken to mean 'unmeasured'.
         distribution::Distro (named and optional, default 'normal') - simulation is monotonically 
                         transformed into distribution specified.
-        r_squared::Float64 (named and optional) -  a number (0,1]; default is 1. 
+        r_squared::Float64 (named and optional) -  a number [0.5,0.9]; default is 0.9 
                         Factors in unmeasured randomness in simulated data. 
                         r_squared is correlation between target distribution and
                         actual simulated data.
@@ -213,7 +213,7 @@ end
 
 """
 function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String; 
-                    distribution::Distro=definedistribution("normal"),r_squared::Float64=1.0)
+                    distribution::Distro=definedistribution("normal"),r_squared::Float64=0.9)
     maxevent=0
     for i in eachindex(scm)
         temp=scm[i].event
@@ -222,6 +222,12 @@ function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String;
         end
     end
     nextevent=maxevent+1
+    if r_squared< 0.5
+        r_squared=0.5
+    end
+    if r_squared>0.9
+        r_squared=0.9
+    end
     #push!(scm,SimpleScmEvent(nextevent,[],[], label))
     push!(scm,SimpleScmEvent(nextevent, label,distribution ,r_squared, [],[],[]))
     return nextevent
@@ -304,7 +310,13 @@ function modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel:
         if newlabel!="xzkg513"
             scm[idx].label=newlabel
         end
-        if r_squared>0.0 && r_squared<=1.0
+        if r_squared!=-666
+            if r_squared< 0.5
+                r_squared=0.5
+            end
+            if r_squared>0.9
+                r_squared=0.9
+            end
             scm[idx].r_squared=r_squared
         end
         if distribution.type != "null"
@@ -581,9 +593,6 @@ function simulationdata(scm::Vector{SimpleScmEvent}, nsims::Int64=1000; randomse
                 betas=Array{Float64}(undef,(nc,1))
                 for j in eachindex(causes)
                     xvar[:,j]=simdata[:, eventidx[causes[j]]]
-                    tc=scm[eventidx[causes[j]]].effects
-                    te=eventrank[i]
-                    itc=findfirst(isequal.(te,tc))
                     tw=scm[eventidx[causes[j]]].effectwts
                     betas[j,1]=tw[1][1]
                 end
@@ -612,16 +621,8 @@ function simulationdata(scm::Vector{SimpleScmEvent}, nsims::Int64=1000; randomse
          end
          if scm[scmrank[i]].distribution.type=="binary"
             tmn=scm[scmrank[i]].distribution.params.mean
-            tshift=log(tmn/(1-tmn)) + .89*(tmn-0.5)
-            simdata[:,scmrank[i]]= simdata[:,scmrank[i]] .+ tshift
-            #tprob=  exp.(simdata[:,scmrank[i]]) ./ ( 1 .+ exp.(simdata[:,scmrank[i]]) )
-            tprob=  1 ./ ( 1 .+ exp.(-1 .* simdata[:,scmrank[i]]) )
-            ntb=length(tprob)
-            tbin=zeros(Int64,ntb)
-            for i in 1:ntb
-                tbin[i]=rand(Binomial(1,tprob[i]),1)[1]
-            end
-            simdata[:,scmrank[i]]=tbin
+            cutq=quantile(simdata[:,scmrank[i]],(1.0-tmn))
+            simdata[:,scmrank[i]] = convert.(Int64, simdata[:,scmrank[i]] .> cutq )
          end
     end  
     
