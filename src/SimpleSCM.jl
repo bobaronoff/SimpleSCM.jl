@@ -28,7 +28,7 @@ export describe, names, events
 #export commoncause, commoneffect, directeffect
 
 # path functions
-export pathsdirect, dependencypaths, dseparated
+export pathsdirect, dependencypaths, dseparated, pathsbylabel
 #export pathscommoncause, pathscommoneffect
 
 # causal functions
@@ -561,7 +561,7 @@ end
 
     Example
     ```
-    df= simulationdata(myscm, nsims=5000, randomseed=5551212
+    mydf= simulationdata(myscm, nsims=5000, randomseed=5551212
     ```
 
 """
@@ -647,6 +647,27 @@ function simulationdata(scm::Vector{SimpleScmEvent}, nsims::Int64=1000; randomse
     return simdf
 end
 
+"""
+    modelsimdf()
+
+    This function will create a model, linear vs logisitic, using the supplied parameters.
+        The treatment/intervention and outcome event nodes can be specified using either
+        event ID or label (i.e. clabel,elabel).  A conditioning set (i.e. cset) is supplied as
+        vector of labels or event ID).  
+
+        The model is processed by GLM.jl and is the return value.
+            coefficient table = coeftable(model)
+            table.col[4] gives p-values
+            table.rownms gives row names
+            table.colnms gives col names
+
+    Example
+    ```
+    mymodel=modelsimdf(mydf,"X","Y", cset=["X2","X3])
+    resultdata=coeftable(mymodel)
+    ```
+
+"""
 function modelsimdf(simdf::DataFrame, clabel::String,elabel::String; 
                         cset::Vector{String}=Vector{String}(undef,0))
     # general formula = term(elabel)~term(1)+term(clabel)+sum(term.(cset))
@@ -716,6 +737,19 @@ function modelsimdf(simdf::DataFrame, scm::Vector{SimpleScmEvent},event1::Int64,
     end
 end
 
+"""
+    describe()
+
+    This function prints the specifics of a structural model.  Each event node is 
+        listed along with event ID, label, distribution, r-squared, causes (i.e. 
+        'incoming arrows'), and effects (i.e. 'outgoing arrows')
+
+    Example
+    ```
+    describe(myscm)
+    ```
+
+"""
 function describe(scm::Vector{SimpleScmEvent})
     scmrank,eventrank = causerankscm(scm)
     # order by causal rank
@@ -770,11 +804,33 @@ function describe(scm::Vector{SimpleScmEvent})
     end
 end
 
+"""
+    names()
+
+    This function returns a Vector{String} and lists the labels for each event node.
+
+    Example
+    ```
+    eventnames=names(myscm)
+    ```
+
+"""
 function names(scm::Vector{SimpleScmEvent})
     labels=[scm[i].label for i in eachindex(scm)]
     return labels
 end
 
+"""
+    events()
+
+    This function returns a dictionary.  The keys represent event ID's and the values
+        are the corresponding event labels.  This is useful for mapping.
+
+    Example
+    ```
+    labeldict=events(myscm)
+    ```
+"""
 function events(scm::Vector{SimpleScmEvent})
     events=[scm[i].event for i in eachindex(scm)]
     labels=[scm[i].label for i in eachindex(scm)]
@@ -1042,6 +1098,22 @@ end
 
 # functions to create path(s) from commoncause,commoneffect, and directeffect lists
 
+"""
+    pathsdirect()
+
+    This function returns a Vector{Vector{Int64}} where each index contains
+        a direct causal path between first event node and second event node.
+        Event nodes can be input as event ID or label.
+    The returned paths are listed as event ID.
+
+    Example
+    ```
+    directpaths=pathsdirect(myscm,"X","Y")
+    directpathsbylabel=pathsbylabel(myscm,directpaths)
+    
+    ```
+
+"""
 function pathsdirect(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64)
     goodpaths=Vector{Vector{Int64}}(undef,0)
     if event1==event2
@@ -1087,6 +1159,46 @@ function pathsdirect(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64)
     return goodpaths
 end
 
+function pathsdirect(scm::Vector{SimpleScmEvent}, clabel::String, elabel::String)
+    labels=[scm[i].label for i in eachindex(scm)]
+    cidx=findfirst(isequal.(clabel,labels))
+    eidx=findfirst(isequal.(elabel,labels))
+    if isnothing(cidx) || isnothing(eidx)
+        msg="Specified labels not found: pathsdirect."
+        error(msg)
+    end
+    pathsdirect(scm,scm[cidx].event,scm[eidx].event)
+end
+
+function pathsbylabel(scm::Vector{SimpleScmEvent},pathlist::Vector{Vector{Int64}})
+    labeldict=events(scm)
+    pathlabels= collect(map(x->labeldict[x],path) for path in pathlist)
+    return pathlabels
+end
+
+"""
+    dependencypaths()
+
+    This function returns a Vector{NamedTuple}.  Each element represents a path of
+        potential statistical dependency as defined by the structural model, between the
+        first event node and second event node, and indicat by event ID or label.
+    The named tuple includes:
+        pathnodes => a vector of event nodes along the path (as event ID)
+        nodetypes => a vector with each element corresponding to the event in pathnodes.
+                     Node types include: HNI,HNO (handle in, handle out)
+                                         CH (chained)
+                                         CC (common cause)
+                                         CL (collider)
+        causal => a boolean (true/false) as whether path is 'causal'
+        blocked => a boolean (true/false) as whether path is 'blocked' in 
+                   non-conditioned state.
+
+    Example
+    ```
+    dpaths=dependencypaths(myscm,"X","Y")
+    ```
+
+"""
 function dependencypaths(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64)
     # function to find dependency paths as well as ....
     # calculate if dependnecy path is open or blocked
@@ -1189,6 +1301,18 @@ function dependencypaths(scm::Vector{SimpleScmEvent}, clabel::String, elabel::St
     dependencypaths(scm,scm[cidx].event,scm[eidx].event)
 end
 
+"""
+    dseparated()
+
+    This function returns a boolean (true/false) as whether two event nodes are
+        d-separated.  Event nodes can be repesented by event ID or label.
+
+    Example
+    ```
+    separationstatus=dseparated(myscm,"X","Y")
+    ```
+
+"""
 function dseparated(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64 ; 
                             cset::Union{Vector{Int},Vector{String}}=Vector{Int64}(undef,0))
     # determines d-separation between two nodes and condition set
@@ -1289,6 +1413,22 @@ function dseparated(scm::Vector{SimpleScmEvent}, clabel::String, elabel::String 
     dseparated(scm, scm[cidx].event, scm[eidx].event,cset=cset)
 end
 
+"""
+    onlycausalopen()
+
+    This function returns a boolean (true/fale) whether all non-causal paths
+        are blocked.  A conditioning set (of event nodes) can specified (i.e. cset).
+        cset must be input in form of a Vector.  The elements can indicate either
+        event ID or label.
+
+    Example
+    ```
+    causalonly=onlycausalopen(myscm,"X","Y")
+    causalonly2=onlycausalopen(myscm,"X","Y", cset=["Z1","Z2","Z3"])
+
+    ```
+    
+"""
 function onlycausalopen(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64 ; 
                             cset::Union{Vector{Int},Vector{String}}=Vector{Int64}(undef,0),
                             verbose::Bool=false, bylabel::Bool=true)
@@ -1489,8 +1629,24 @@ function pathscommoneffect(scm::Vector{SimpleScmEvent}, event1::Int64, event2::I
 
 end
 
+"""
+    conditioningsets()
+
+    This function returns a Vector{Vector{Union{Int64,String}}}.  Each element contains
+        a conditioning set of event nodes that will block all non-causal paths between 
+        first and second events.  These events can be specified by event ID or label.
+        The condition sets will be in the same form (event ID vs label) as index events.
+        This behavior can be over-ridden with the 'bylabel' parameter set to 'true'.
+    The 'verbose' parameter indicates if progress is printed.
+
+    Example
+    ```
+    csets=conditioningsets(myscm,"X","Y")
+    ```
+
+"""
 function conditioningsets(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64; 
-    verbose::Bool=true , bylabel::Bool=false, rehab::Bool=true)
+    verbose::Bool=true , bylabel::Bool=false)
     # functions to create conditioning sets
     conditionsets=Vector{Vector{String}}(undef,0)
     mtset=Vector{Int64}(undef,0)
@@ -1687,7 +1843,7 @@ function conditioningsets(scm::Vector{SimpleScmEvent}, event1::Int64, event2::In
 end
 
 function conditioningsets(scm::Vector{SimpleScmEvent}, clabel::String, elabel::String; 
-                verbose::Bool=true , bylabel::Bool=true, rehab::Bool=true)
+                verbose::Bool=true , bylabel::Bool=true)
     labels=[scm[i].label for i in eachindex(scm)]
     cidx=findfirst(isequal.(clabel,labels))
     eidx=findfirst(isequal.(elabel,labels))
@@ -1695,11 +1851,30 @@ function conditioningsets(scm::Vector{SimpleScmEvent}, clabel::String, elabel::S
         msg="Specified labels not found: conditioningsets."
         error(msg)
     end
-    conditioningsets(scm,scm[cidx].event,scm[eidx].event, verbose=verbose,bylabel=bylabel, rehab=rehab)
+    conditioningsets(scm,scm[cidx].event,scm[eidx].event, verbose=verbose,bylabel=bylabel)
 end
 
+"""
+    independencesets()
+
+    This function returns a Vector{Vector{Union{Int64,String}}}.  Each element contains
+        a conditioning set of event nodes that will block all paths between first and 
+        second events.  These events can be specified by event ID or label.
+        The condition sets will be in the same form (event ID vs label) as index events.
+        This behavior can be over-ridden with the 'bylabel' parameter set to 'true'.
+    The 'verbose' parameter indicates if progress is printed.  The 'rehab' parameter
+        specifies if function should attempt to resolve issues causes by an event node with
+        dual roles across paths (i.e. collider and chain/common cause). This is best left
+        at default value of 'true'.
+    
+    Example
+    ```
+    csets=independencesets(myscm,"X","Y")
+     ```
+       
+"""
 function independencesets(scm::Vector{SimpleScmEvent}, event1::Int64, event2::Int64; 
-    verbose::Bool=true , bylabel::Bool=false, rehab::Bool=true)
+    verbose::Bool=true , bylabel::Bool=false)
     # functions to create conditioning sets
     conditionsets=Vector{Vector{String}}(undef,0)
     mtset=Vector{Int64}(undef,0)
@@ -1881,7 +2056,7 @@ function independencesets(scm::Vector{SimpleScmEvent}, event1::Int64, event2::In
 end
 
 function independencesets(scm::Vector{SimpleScmEvent}, clabel::String, elabel::String; 
-    verbose::Bool=true , bylabel::Bool=true, rehab::Bool=true)
+    verbose::Bool=true , bylabel::Bool=true)
 
     labels=[scm[i].label for i in eachindex(scm)]
     cidx=findfirst(isequal.(clabel,labels))
@@ -1890,9 +2065,34 @@ function independencesets(scm::Vector{SimpleScmEvent}, clabel::String, elabel::S
         msg="Specified labels not found: conditioningsets."
         error(msg)
     end
-    independencesets(scm,scm[cidx].event,scm[eidx].event, verbose=verbose,bylabel=bylabel, rehab=rehab)
+    independencesets(scm,scm[cidx].event,scm[eidx].event, verbose=verbose,bylabel=bylabel)
 end
 
+"""
+    plotscm()
+
+    This function will plot a DAG (i.e. directed acyclic graph) specified by the
+        structural model.  If supplied with 'intervention' and 'outcome' nodes, dependency
+        paths will be color coded.  These event nodes can be specified by event ID or label.
+        Nodes will also be color coded (green => intervention/outcome, red => conditioned,
+        gray => unmeasured.) Paths are color coded (green => causal and open,
+        red => non-causal and blocked, yellow => non-causal and unblocked,
+        purple => causal and blocked, blue => descendant of collider, 
+        black => non-dependency path).
+    If intervention/outcome are specified, this function will also accept a set of 
+        conditioning event nodes.  The color coding of the paths will reflect the result 
+        of conditioning.  The condition set (i.e. 'cset') must be input as a vector.  
+        The elements of cset can be event ID or label.
+    The named parameter 'title' allows speicifation of title for the plot.
+    The named parameter 'coderender' is a boolean which will trigger an incode rendering of the plot.
+
+    Example
+    ```
+    myplot=plotscm(myscm, title="My marvelous model DAG")
+    myplot2=plotscm(myscm,"X","Y",cset=["Z1","Z2"], coderender=true)
+    ```
+
+"""
 function plotscm(scm::Vector{SimpleScmEvent}; coderender::Bool=false, title::String="")
     # routine to plot a directed acyclic graphs
     scmrank,eventrank = causerankscm(scm)
