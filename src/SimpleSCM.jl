@@ -76,7 +76,7 @@ end
                         variable names for simulation data.  If first character is 
                         u or U then model assumes event is not measured.
         distribution::Distro - designation of target distribution for simulated data
-        r_squared::Float64 - a number [0.5,0.9]; default is 0.9. Factors in unmeasured randomness in 
+        r_squared::Float64 - a number [0.1,0.9]; default is 0.9. Factors in unmeasured randomness in 
                             simulated data. r_squared is correlation between target distribution and
                             actual simulated data.
         causes::Vector{Int64} - a vector of event node ID with an edge that points into this event node.
@@ -97,6 +97,9 @@ end
 
 # new distro types will need adjustment of defaultdistroparams,definedistribution,printevents
 # as well as routines to generate simulated data.
+
+# new elements to struct SimpleScmEvent requires adjustment of add_scmevent! and modify_scmevent!
+# would also need to adjust any functions that use that field to process i.e. simulationdata()
 
 function defaultdistroparams()
     ddp=DistroParams(0.0,1.0)
@@ -199,7 +202,7 @@ end
                         (either) u or U the event is taken to mean 'unmeasured'.
         distribution::Distro (named and optional, default 'normal') - simulation is monotonically 
                         transformed into distribution specified.
-        r_squared::Float64 (named and optional) -  a number [0.5,0.9]; default is 0.9 
+        r_squared::Float64 (named and optional) -  a number [0.1,0.9]; default is 0.9 
                         Factors in unmeasured randomness in simulated data. 
                         r_squared is correlation between target distribution and
                         actual simulated data.
@@ -207,8 +210,8 @@ end
     Example:
     ```
     add_scmevent!(myscm,"Event A",r_squared=.9)
-    add_scmevent!(mysc,"Event B",r_squared=.9,distribution=definedistribution("normal", mean=4,sd=2))
-    add_scmevent!(myscm4,"Event C",r_squared=.9,distribution=definedistribution("binary", mean=.25))
+    add_scmevent!(mysc,"Event B",r_squared=.8,distribution=definedistribution("normal", mean=4,sd=2))
+    add_scmevent!(myscm4,"Event C",r_squared=.1,distribution=definedistribution("binary", mean=.25))
     ```
 
 """
@@ -222,8 +225,8 @@ function add_scmevent!(scm::Vector{SimpleScmEvent}, label::String;
         end
     end
     nextevent=maxevent+1
-    if r_squared< 0.5
-        r_squared=0.5
+    if r_squared< 0.1
+        r_squared=0.1
     end
     if r_squared>0.9
         r_squared=0.9
@@ -311,8 +314,8 @@ function modify_scmevent!(scm::Vector{SimpleScmEvent},  event::Int64 ; newlabel:
             scm[idx].label=newlabel
         end
         if r_squared!=-666
-            if r_squared< 0.5
-                r_squared=0.5
+            if r_squared< 0.1
+                r_squared=0.1
             end
             if r_squared>0.9
                 r_squared=0.9
