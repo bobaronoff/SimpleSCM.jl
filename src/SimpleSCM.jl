@@ -2408,9 +2408,9 @@ function alleffectsubscm(scm::Vector{SimpleScmEvent}, event::Int64)
     return subscm
 end
 
-function allainb(a::Vector{Int64},b::Vector{Int64})
-    return (prod(in.(a,Ref(b))))
-end
+# function allainb(a::Vector{Int64},b::Vector{Int64})
+#     return (prod(in.(a,Ref(b))))
+# end
 
 end  # end module
 
