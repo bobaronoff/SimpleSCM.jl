@@ -20,7 +20,7 @@ export add_scmevent!, delete_scmevent!, modify_scmevent!
 export add_scmedge!, delete_scmedge!, modify_wts_scmedge!
 
 # scm describing functions
-export describe, names, events
+export describescm, namescm, eventscm
 # export eventtolabel, labeltoevent, scmindexoflabel, scmindexofevent
 
 # semi-internal event lists
@@ -738,7 +738,7 @@ function modelsimdf(simdf::DataFrame, scm::Vector{SimpleScmEvent},event1::Int64,
 end
 
 """
-    describe()
+    describescm()
 
     This function prints the specifics of a structural model.  Each event node is 
         listed along with event ID, label, distribution, r-squared, causes (i.e. 
@@ -746,11 +746,11 @@ end
 
     Example
     ```
-    describe(myscm)
+    describescm(myscm)
     ```
 
 """
-function describe(scm::Vector{SimpleScmEvent})
+function describescm(scm::Vector{SimpleScmEvent})
     scmrank,eventrank = causerankscm(scm)
     # order by causal rank
     scm2=scm[scmrank]
@@ -805,33 +805,33 @@ function describe(scm::Vector{SimpleScmEvent})
 end
 
 """
-    names()
+    namescm()
 
     This function returns a Vector{String} and lists the labels for each event node.
 
     Example
     ```
-    eventnames=names(myscm)
+    eventnames=namescm(myscm)
     ```
 
 """
-function names(scm::Vector{SimpleScmEvent})
+function namescm(scm::Vector{SimpleScmEvent})
     labels=[scm[i].label for i in eachindex(scm)]
     return labels
 end
 
 """
-    events()
+    eventscm()
 
     This function returns a dictionary.  The keys represent event ID's and the values
         are the corresponding event labels.  This is useful for mapping.
 
     Example
     ```
-    labeldict=events(myscm)
+    labeldict=eventscm(myscm)
     ```
 """
-function events(scm::Vector{SimpleScmEvent})
+function eventscm(scm::Vector{SimpleScmEvent})
     events=[scm[i].event for i in eachindex(scm)]
     labels=[scm[i].label for i in eachindex(scm)]
     labeldict=Dict{Int64,String}()
@@ -1171,7 +1171,7 @@ function pathsdirect(scm::Vector{SimpleScmEvent}, clabel::String, elabel::String
 end
 
 function pathsbylabel(scm::Vector{SimpleScmEvent},pathlist::Vector{Vector{Int64}})
-    labeldict=events(scm)
+    labeldict=eventscm(scm)
     pathlabels= collect(map(x->labeldict[x],path) for path in pathlist)
     return pathlabels
 end
